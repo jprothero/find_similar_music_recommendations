@@ -2,6 +2,7 @@ from scipy.sparse import csr_matrix
 from sklearn.linear_model import Ridge, LogisticRegression
 from scipy.sparse.linalg import LinearOperator, cg
 import numpy as np
+from scipy.optimize import minimize_scalar, minimize
 
 def calculate_ease_for_item_cg(X: csr_matrix, item_id: int, lambda_: float) -> np.ndarray:
     """
@@ -157,3 +158,40 @@ def calculate_ease_for_item_logistic(X: csr_matrix, item_id: int, lambda_: float
     similarities[other_items_mask] = model.coef_[0]
 
     return similarities
+
+def a_to_b_error_metric(mat, a, b, lambda_, verbose=True):
+    similarity_scores_a = calculate_ease_for_item_cg(mat, a, lambda_)
+    ranking_a = np.argsort(-similarity_scores_a)
+    
+    similarity_scores_b = calculate_ease_for_item_cg(mat, b, lambda_)
+    ranking_b = np.argsort(-similarity_scores_b)
+    
+    # lower is better
+    error = (ranking_a.tolist().index(b) + ranking_b.tolist().index(a))/2
+    
+    if verbose:
+        print("lambda_:", lambda_)
+        print("error:", error)
+    
+    return error
+
+def optimize_lambda_using_a_to_b_matching(mat, a, b, fast_approximation=True):
+    lambda_ = 1000000
+    
+    prev_error = np.inf
+    while True:
+        error = a_to_b_error_metric(mat, a, b, lambda_)
+        
+        if error >= prev_error:
+            break
+        else:
+            lambda_ /= 10
+            prev_error = error
+            
+    if fast_approximation:
+        return round(lambda_*10)
+    else:
+        res = minimize_scalar(lambda lambda_: a_to_b_error_metric(mat, a, b, lambda_), 
+                              bracket=(lambda_, lambda_*10, lambda_*100))
+
+        return round(res.x)

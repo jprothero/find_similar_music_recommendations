@@ -31,10 +31,10 @@ def npmi_batch(mat, i, temp=1, eps=1e-14, derank_i=True):
     return npmi
 
 def a_to_b_error_metric_npmi(mat, a, b, temp, verbose=True):
-    similarity_scores_a = npmi_batch(artist_mat, a, temp)
+    similarity_scores_a = npmi_batch(mat, a, temp)
     ranking_a = np.argsort(-similarity_scores_a)
     
-    similarity_scores_b = npmi_batch(artist_mat, b, temp)
+    similarity_scores_b = npmi_batch(mat, b, temp)
     ranking_b = np.argsort(-similarity_scores_b)
     
     # lower is better
