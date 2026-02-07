@@ -32,7 +32,7 @@ def npmi_batch(mat, i, temp=1, eps=1e-14, derank_i=True):
     
     return npmi
 
-def make_npmi_batch_popularity_weighted_cache(mat, i, eps=1e-14, derank_i=True, normalize=False):
+def make_npmi_batch_popularity_weighted_cache(mat, i, eps=1e-14):
     mat = csr_array(mat)
 
     py = mat.mean(axis=0)
@@ -40,17 +40,34 @@ def make_npmi_batch_popularity_weighted_cache(mat, i, eps=1e-14, derank_i=True, 
 
     px = py[i]
 
-    pmi = np.log2(pxy) - (np.log2(px) + np.log2(py))
+    return pxy, py
+
+# def npmi_batch_popularity_weighted(mat, i, alpha, cache=None, eps=1e-14, derank_i=True, normalize=False):
+#     if cache is None:
+#         mat = csr_array(mat)
+
+#         py = mat.mean(axis=0)
+#         pxy = (mat[:, i:i+1] * mat).mean(axis=0) + eps
+#     else:
+#         pxy, py = cache
+        
+#     px = py[i]
+
+#     pmi = np.log2(pxy) - (np.log2(px) + np.log2(py))
+
+#     if normalize:
+#         pmi = pmi / -np.log2(pxy)
+
+#     if derank_i:
+#         pmi[i] = -np.inf
+        
+#     pxy_scaled = pxy**alpha
+        
+#     return (pmi * pxy_scaled) / pxy_scaled.max()
+
+# def npmi_batch_popularity_weighted(mat, i, alpha, cache=None, eps=1e-14, derank_i=True, normalize=False):
+#     alpha = max(alpha, 0)
     
-    if normalize:
-        pmi = pmi / -np.log2(pxy)
-
-    if derank_i:
-        pmi[i] = -np.inf
-
-    return pmi, pxy, py
-
-# def npmi_batch_popularity_weighted(mat, i, lambda_, cache=None, eps=1e-14, derank_i=True, normalize=False):
 #     if cache is None:
 #         mat = csr_array(mat)
 
@@ -69,12 +86,40 @@ def make_npmi_batch_popularity_weighted_cache(mat, i, eps=1e-14, derank_i=True, 
 #     else:
 #         pmi, pxy, py = cache
         
-#     pxy_scaled = pxy**lambda_
-        
-#     return (pmi * pxy_scaled) / pxy_scaled.max()
+#     n_user, n_item = mat.shape
 
-def npmi_batch_popularity_weighted(mat, i, lambda_, cache=None, eps=1e-14, derank_i=True, normalize=False):
-    alpha = max(lambda_, 0)
+#     rows = n_item
+#     cols = n_item
+#     N_raw = n_user
+
+#     N_smoothed = N_raw + (alpha * rows * cols)
+
+#     py = py * n_user
+#     py = (py + (alpha * cols)) / N_smoothed
+
+#     assert py.min() >= 0
+#     assert py.max() <= 1
+
+#     px = py[i]
+
+#     pxy = pxy * n_user
+#     pxy = (pxy + alpha)/N_smoothed
+    
+#     assert pxy.min() >= 0
+#     assert pxy.max() <= 1
+
+#     pmi = np.log2(pxy) - (np.log2(px) + np.log2(py))
+
+#     if normalize:
+#         pmi = pmi / -np.log2(pxy)
+
+#     if derank_i:
+#         pmi[i] = -np.inf
+    
+#     return pmi
+
+def npmi_batch_popularity_weighted(mat, i, alpha, cache=None, eps=1e-14, derank_i=True, normalize=False):
+    alpha = max(alpha, 0)
     
     if cache is None:
         mat = csr_array(mat)
@@ -92,26 +137,32 @@ def npmi_batch_popularity_weighted(mat, i, lambda_, cache=None, eps=1e-14, deran
         if derank_i:
             pmi[i] = -np.inf
     else:
-        pmi, pxy, py = cache
+        pxy, py = cache
         
     n_user, n_item = mat.shape
 
-    rows = n_item
-    cols = n_item
-    N_raw = n_user
-
-    N_smoothed = N_raw + (alpha * rows * cols)
-
+    # unnormalize back to counts
     py = py * n_user
-    py = (py + (alpha * cols)) / N_smoothed
+    
+    # add n_user * alpha
+    py = py + n_user * alpha
+    
+    # renormalize to make it a probability
+    py = py / (n_user + n_user * alpha)
 
     assert py.min() >= 0
     assert py.max() <= 1
 
     px = py[i]
-
+    
+    # unnormalize back to counts
     pxy = pxy * n_user
-    pxy = (pxy + alpha)/N_smoothed
+    
+    # add alpha
+    pxy = pxy + alpha
+    
+    # renormalize to make it a probability
+    pxy = pxy / (n_user + n_user * alpha)
     
     assert pxy.min() >= 0
     assert pxy.max() <= 1
@@ -123,8 +174,10 @@ def npmi_batch_popularity_weighted(mat, i, lambda_, cache=None, eps=1e-14, deran
 
     if derank_i:
         pmi[i] = -np.inf
-    
-    return pmi
+        
+    pxy_scaled = pxy**(.001)
+        
+    return (pmi * pxy_scaled) / pxy_scaled.max()
 
 def a_to_b_error_metric_npmi(mat, a, b, temp, verbose=True):
     similarity_scores_a = npmi_batch(mat, a, temp)
@@ -142,43 +195,32 @@ def a_to_b_error_metric_npmi(mat, a, b, temp, verbose=True):
     
     return error
 
-def a_to_b_error_metric_npmi_pop_weighted(mat, a, b, lambda_, lambda_penalty=False, cache_a=None, cache_b=None, verbose=True):
-    similarity_scores_a = npmi_batch_popularity_weighted(mat, a, lambda_, cache=cache_a)
+def a_to_b_error_metric_npmi_pop_weighted(mat, a, b, alpha, alpha_penalty=False, cache_a=None, cache_b=None, verbose=True):
+    similarity_scores_a = npmi_batch_popularity_weighted(mat, a, alpha, cache=cache_a)
     ranking_a = np.argsort(-similarity_scores_a)
     
-    similarity_scores_b = npmi_batch_popularity_weighted(mat, b, lambda_, cache=cache_b)
+    similarity_scores_b = npmi_batch_popularity_weighted(mat, b, alpha, cache=cache_b)
     ranking_b = np.argsort(-similarity_scores_b)
     
     # lower is better
-    if lambda_penalty:
-        error = ranking_a.tolist().index(b) + ranking_b.tolist().index(a) + min(1, max(lambda_, 0))
+    if alpha_penalty:
+        error = (ranking_a.tolist().index(b) + ranking_b.tolist().index(a))/2 + min(.499999, max(alpha, 0))
     else:
         error = (ranking_a.tolist().index(b) + ranking_b.tolist().index(a))/2
     
     if verbose:
-        print("lambda_:", lambda_)
+        print("alpha:", alpha)
         print("error:", error)
     
     return error
 
-def optimize_lambda_using_a_to_b_matching_npmi(mat, a, b, optimize_rank=True, lambda_penalty=False, verbose=True):
-    def f(lambda_, 
-          cache_a=make_npmi_batch_popularity_weighted_cache(mat, a) if optimize_rank else None,
-          cache_b=make_npmi_batch_popularity_weighted_cache(mat, b) if optimize_rank else None
+def optimize_alpha_using_a_to_b_matching_npmi(mat, a, b, alpha_penalty=True, verbose=True):
+    def f(alpha, 
+          cache_a=make_npmi_batch_popularity_weighted_cache(mat, a),
+          cache_b=make_npmi_batch_popularity_weighted_cache(mat, b)
          ):
         
-        if optimize_rank:
-            return a_to_b_error_metric_npmi_pop_weighted(mat, a, b, lambda_, 
-                                                         cache_a=cache_a, cache_b=cache_b, lambda_penalty=lambda_penalty)
-        else:
-            npmi_a = npmi_batch_popularity_weighted(mat, a, lambda_)
-            npmi_b = npmi_batch_popularity_weighted(mat, b, lambda_)
-
-            score = ((npmi_a[b] / npmi_a.max()) + (npmi_b[a] / npmi_b.max()))/2
-
-            if verbose:
-                print("score:", score)
-
-            return -score
+        return a_to_b_error_metric_npmi_pop_weighted(mat, a, b, alpha, 
+                                                     cache_a=cache_a, cache_b=cache_b, alpha_penalty=alpha_penalty)
     
     return minimize_scalar(f).x
