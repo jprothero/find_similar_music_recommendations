@@ -159,11 +159,13 @@ def calculate_ease_for_item_logistic(X: csr_matrix, item_id: int, lambda_: float
 
     return similarities
 
-def a_to_b_error_metric(mat, a, b, lambda_, verbose=True):
-    similarity_scores_a = calculate_ease_for_item_cg(mat, a, lambda_)
+def a_to_b_error_metric(mat, a, b, lambda_, 
+                        ease_func=calculate_ease_for_item_cg,
+                        verbose=True):
+    similarity_scores_a = ease_func(mat, a, lambda_)
     ranking_a = np.argsort(-similarity_scores_a)
     
-    similarity_scores_b = calculate_ease_for_item_cg(mat, b, lambda_)
+    similarity_scores_b = ease_func(mat, b, lambda_)
     ranking_b = np.argsort(-similarity_scores_b)
     
     # lower is better
